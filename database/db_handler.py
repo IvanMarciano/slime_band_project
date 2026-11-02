@@ -24,7 +24,7 @@ DEFAULT_DB_PATH = Path(__file__).resolve().parent / "slime_band.db"
 
 # Subir este numero y anadir el SQL correspondiente en _MIGRATIONS cuando
 # cambie el esquema; las bases existentes se actualizan solas al arrancar.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _MIGRATIONS: dict[int, str] = {
     1: """
@@ -55,11 +55,15 @@ _MIGRATIONS: dict[int, str] = {
     ALTER TABLE tracks ADD COLUMN spotify_id TEXT;
     CREATE UNIQUE INDEX idx_tracks_spotify ON tracks (spotify_id);
     """,
+    # bpm: tempo aproximado para que los slimes bailen al ritmo (0 = desconocido)
+    3: """
+    ALTER TABLE tracks ADD COLUMN bpm REAL;
+    """,
 }
 
 # Columnas que se pueden actualizar desde fuera (evita SQL con nombres arbitrarios)
 _EDITABLE = {
-    "shazam_id", "spotify_id", "isrc", "title", "artist", "album", "duration_s", "cover_url",
+    "shazam_id", "spotify_id", "isrc", "title", "bpm", "artist", "album", "duration_s", "cover_url",
     "cover_path", "lyrics_plain", "lyrics_synced", "lyrics_status", "instruments",
 }
 
@@ -146,7 +150,8 @@ class DBHandler:
 
     def is_complete(self, track: dict[str, Any]) -> bool:
         """True si la cancion ya no necesita ninguna llamada externa."""
-        return track["lyrics_status"] != "pending" and track["instruments"] is not None
+        return (track["lyrics_status"] != "pending" and track["instruments"] is not None
+                and track.get("bpm") is not None)
 
     def recent(self, limit: int = 10) -> list[dict[str, Any]]:
         with self._lock:
@@ -215,8 +220,9 @@ class DBHandler:
             status = "not_found"
         self._update(track_id, lyrics_plain=plain, lyrics_synced=synced, lyrics_status=status)
 
-    def set_instruments(self, track_id: int, instruments: list[str]) -> None:
-        self._update(track_id, instruments=instruments)
+    def set_instruments(self, track_id: int, instruments: list[str],
+                        bpm: Optional[float] = None) -> None:
+        self._update(track_id, instruments=instruments, bpm=bpm or 0)
 
     def set_cover_path(self, track_id: int, path: str) -> None:
         self._update(track_id, cover_path=path)
@@ -224,7 +230,7 @@ class DBHandler:
     def reset_enrichment(self, track_id: int) -> None:
         """Fuerza a volver a pedir letra e instrumentos (si el LLM se equivoco)."""
         self._update(track_id, lyrics_plain=None, lyrics_synced=None,
-                     lyrics_status="pending", instruments=None)
+                     lyrics_status="pending", instruments=None, bpm=None)
 
     def mark_played(self, track_id: int) -> None:
         with self._lock, self._conn:

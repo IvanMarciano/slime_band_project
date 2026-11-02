@@ -35,6 +35,7 @@ log = get_logger("main")
 
 COVERS_DIR = Path(__file__).resolve().parent / "ui" / "assets" / "covers"
 FPS = 10  # refresco del display en consola
+DEFAULT_BPM = 110  # si el LLM no dio el tempo
 
 
 @dataclass
@@ -48,6 +49,14 @@ class NowPlaying:
     @property
     def instruments(self) -> list[str]:
         return self.track.get("instruments") or DEFAULT_BAND
+
+    @property
+    def bpm(self) -> float:
+        return self.track.get("bpm") or DEFAULT_BPM
+
+    @property
+    def playing(self) -> bool:
+        return self.detection.playing
 
     def position(self) -> float:
         return self.detection.position_now()
@@ -170,7 +179,8 @@ class SlimeBand:
 
             # Instrumentos despues, para pasarle al LLM el inicio de la letra
             track = self.db.get_by_id(track["id"])
-            if track["instruments"] is None:
+            # Tambien para canciones viejas de la cache que aun no tienen tempo
+            if track["instruments"] is None or track.get("bpm") is None:
                 result = await self.llm.detect_async(
                     track["artist"], track["title"], track.get("album"), track.get("lyrics_plain"))
                 instrument_parser.save_to_db(self.db, track, result)

@@ -22,7 +22,7 @@ from typing import AsyncIterator, Optional
 
 import spotipy
 from dotenv import load_dotenv
-from spotipy.oauth2 import SpotifyPKCE
+from spotipy.oauth2 import SpotifyOauthError, SpotifyPKCE
 
 from core.mic_listener import TrackInfo
 from utils.logger import get_logger
@@ -34,6 +34,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SCOPES = "user-read-currently-playing user-read-playback-state"
 DEFAULT_REDIRECT = "http://127.0.0.1:8888/callback"
 POLL_SECONDS = 3
+CACHE_PATH = ROOT / ".spotify_cache"
 
 
 def spotify_configured() -> bool:
@@ -48,7 +49,7 @@ class SpotifyListener:
             client_id=os.getenv("SPOTIPY_CLIENT_ID"),
             scope=SCOPES,
             redirect_uri=os.getenv("SPOTIPY_REDIRECT_URI", DEFAULT_REDIRECT),
-            cache_path=str(ROOT / ".spotify_cache"),
+            cache_path=str(CACHE_PATH),
             open_browser=True,
         ))
         # True mientras Spotify esta reproduciendo algo: el microfono se pausa
@@ -101,7 +102,15 @@ class SpotifyListener:
                     log.warning("Error de Spotify: %s", exc)
                 await asyncio.sleep(30)
                 continue
-            except Exception as exc:  # red caida, token invalido...
+            except SpotifyOauthError as exc:
+                # Sesion vencida o de otra version: se borra y se pide login de nuevo
+                self.active = False
+                log.warning("La sesion de Spotify no es valida (%s): se abrira el navegador "
+                            "para iniciar sesion otra vez", exc.error)
+                CACHE_PATH.unlink(missing_ok=True)
+                await asyncio.sleep(2)
+                continue
+            except Exception as exc:  # red caida...
                 self.active = False
                 log.warning("No se pudo consultar Spotify: %s", exc)
                 await asyncio.sleep(10)

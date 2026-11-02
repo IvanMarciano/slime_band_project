@@ -90,7 +90,9 @@ SYSTEM_PROMPT = (
     + f"\n\nRules: at most {MAX_INSTRUMENTS} keys; include \"vocals\" only if someone sings or raps; "
     "set \"instrumental\" true if the track has no vocals; if you do not know the song, "
     "infer from the artist's usual style and set \"confidence\" to \"low\".\n"
-    'Reply with JSON only: {"instruments": [...], "instrumental": false, "confidence": "high|medium|low"}'
+    "Also give \"bpm\": the approximate tempo of the recording in beats per minute.\n"
+    'Reply with JSON only: {"instruments": [...], "instrumental": false, "bpm": 120, '
+    '"confidence": "high|medium|low"}'
 )
 
 
@@ -101,6 +103,8 @@ class InstrumentResult:
     confidence: str = "low"
     # "llm" = respuesta valida, guardar en cache; "fallback" = banda por defecto, no guardar
     source: str = "fallback"
+    # Tempo aproximado; los slimes bailan a este ritmo. None si el LLM no lo sabe
+    bpm: Optional[float] = None
 
 
 # --------------------------------------------------------------- validacion
@@ -143,7 +147,13 @@ def parse_response(text: str) -> Optional[InstrumentResult]:
     confidence = str(data.get("confidence", "medium")).lower()
     if confidence not in ("high", "medium", "low"):
         confidence = "medium"
-    return InstrumentResult(instruments[:MAX_INSTRUMENTS], instrumental, confidence, "llm")
+    try:
+        bpm = float(data.get("bpm"))
+    except (TypeError, ValueError):
+        bpm = None
+    if bpm is not None and not 40 <= bpm <= 220:
+        bpm = None
+    return InstrumentResult(instruments[:MAX_INSTRUMENTS], instrumental, confidence, "llm", bpm)
 
 
 # --------------------------------------------------------------------- HTTP
@@ -242,7 +252,7 @@ def save_to_db(db, track: dict, result: InstrumentResult) -> None:
     """
     if result.source != "llm":
         return
-    db.set_instruments(track["id"], result.instruments)
+    db.set_instruments(track["id"], result.instruments, result.bpm)
     if result.instrumental and track.get("lyrics_status") == "not_found":
         db.set_lyrics(track["id"], instrumental=True)
 
