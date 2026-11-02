@@ -1,0 +1,16 @@
+# Claves y sesiones personales: NUNCA subir
+.env
+.spotify_cache
+.cache*
+
+# Datos locales de cada usuario
+database/*.db
+database/*.db-wal
+database/*.db-shm
+ui/assets/covers/
+ui/assets/covers_tmp/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
